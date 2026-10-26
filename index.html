@@ -207,7 +207,7 @@
 
 <main>
   <section class="stage">
-    <input id="titleInput" value="今天要幹嘛？" spellcheck="false" aria-label="轉盤標題">
+    <input id="titleInput" value="今天誰要死?" spellcheck="false" aria-label="轉盤標題">
     <div class="wheel-wrap">
       <canvas id="wheelCanvas" title="點擊旋轉"></canvas>
       <div class="char char-left" aria-hidden="true"><img src="assets/girl.png" alt="圍觀的紫髮女孩"></div>
@@ -299,10 +299,11 @@ const PRESETS = {
   "真心話大冒險": ["真心話*3", "大冒險*3", "免罰过关"],
   "處罰": ["唱歌", "深蹲 10 下", "學猫叫", "罰錢 50*2", "免罰"],
   "擲筊式": ["🟢 好", "❌ 否"],
+  "今日死法": ["被香蕉皮滑倒摔死", "被長頸鹿踩死", "吃葡萄嗆死", "上廁所滑手機掉馬桶溺死", "被垃圾車壓死", "被rotom機撞死", "在淺水灘溺死", "被閃電劈第二次", "被子彈紙箱壓死", "從沙發滑落撞桌角"],
 };
 
 let state = {
-  title: "今天要幹嘛？",
+  title: "今天誰要死?",
   raw: "小美\n小華\n大雄\n靜香\n胖虎\n小夫",
   hidden: [],          // 隱藏的行索引
   removeWin: false,
@@ -785,7 +786,10 @@ function load(){
     if(s && typeof s === "object"){
       if(!loaded && typeof s.raw === "string") state.raw = s.raw;
       if(Array.isArray(s.hidden)) state.hidden = s.hidden;
-      if(typeof s.title === "string"){ state.title = s.title; $("titleInput").value = s.title; }
+      if(typeof s.title === "string"){
+        if(s.title === "今天要幹嘛？") s.title = "今天誰要死?"; // 舊版預設標題自動遷移
+        state.title = s.title; $("titleInput").value = s.title;
+      }
       state.removeWin = !!s.removeWin; state.confetti = s.confetti !== false; state.sound = s.sound !== false;
       if(s.speed) state.speed = String(s.speed);
       if(Array.isArray(s.history)) state.history = s.history;
@@ -859,7 +863,7 @@ $("btnResetWheel").addEventListener("click", () => { rot = 0; lastWinner = null;
 $("btnClearAll").addEventListener("click", () => {
   if(!confirm("確定清除所有資料（清單、設定、歷史）？")) return;
   localStorage.removeItem(LS_KEY);
-  state = { title:"今天要幹嘛？", raw:"", hidden:[], removeWin:false, speed:"5", sound:true, confetti:true, history:[] };
+  state = { title:"今天誰要死?", raw:"", hidden:[], removeWin:false, speed:"5", sound:true, confetti:true, history:[] };
   $("titleInput").value = state.title;
   $("cfgRemoveWin").checked = false; $("cfgConfetti").checked = true; $("cfgSpeed").value = "5";
   updateSoundBtn(); renderHistory(); syncTextarea(); parseList(); draw();
