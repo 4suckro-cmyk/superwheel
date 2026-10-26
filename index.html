@@ -298,6 +298,10 @@ const PRESETS = {
   "今天吃什麼": ["滷肉飯", "羊肉爐", "珍珠奶茶", "便當", "泡麵", "火鍋", "壽司", "沙拉*2"],
   "處罰": ["唱歌", "深蹲 10 下", "學貓叫", "罰錢 50*2", "免罰"],
   "今日死法": ["被香蕉皮滑倒摔死", "被長頸鹿踩死", "吃葡萄嗆死", "上廁所滑手機掉馬桶溺死", "被垃圾車壓死", "被rotom機撞死", "在淺水灘溺死", "被閃電劈第二次", "被子彈紙箱壓死", "從沙發滑落撞桌角"],
+  "狼人殺": {
+    title: "夜色降臨！今晚你要誰死？",
+    items: ["狼人*3", "村民*4", "預言家", "女巫", "獵人", "守衛", "白癡", "狼王*2", "狂人"],
+  },
 };
 
 let state = {
@@ -739,14 +743,16 @@ function renderHistory(){
 /* 範本 */
 function renderPresets(){
   const el = $("presets");
-  Object.entries(PRESETS).forEach(([name, arr]) => {
+  Object.entries(PRESETS).forEach(([name, def]) => {
+    const arr = Array.isArray(def) ? def : def.items;
+    const title = (Array.isArray(def) || !def.title) ? name : def.title;
     const c = document.createElement("span");
     c.className = "chip"; c.textContent = name;
     c.addEventListener("click", () => {
       if(!confirm(`載入「${name}」會覆蓋目前清單，確定？`)) return;
       state.raw = arr.join("\n"); state.hidden = [];
-      state.title = name;
-      $("titleInput").value = name;
+      state.title = title;
+      $("titleInput").value = title;
       syncTextarea(); parseList(); save(); draw();
     });
     el.appendChild(c);
