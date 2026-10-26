@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>✨ 超級轉盤 — 隨機抽籤</title>
+<style>
+  :root{
+    --bg:#0f1220; --bg2:#161a2e; --panel:#1c2138; --panel2:#232a4a;
+    --text:#e8ecf8; --muted:#8b93b4; --accent:#ff5470; --accent2:#ffb03a;
+    --ok:#3ddc84; --line:#2c3357; --radius:16px;
+    font-size:16px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    font-family:"PingFang TC","Microsoft JhengHei","Noto Sans TC",system-ui,sans-serif;
+    background:radial-gradient(1200px 800px at 80% -10%, #1e2444 0%, var(--bg) 55%),
+               radial-gradient(900px 600px at -10% 110%, #23173a 0%, var(--bg) 55%), var(--bg);
+    color:var(--text); min-height:100vh; overflow-x:hidden;
+    -webkit-user-select:none; user-select:none;
+  }
+  body.editing textarea, .selectable{ -webkit-user-select:text; user-select:text; }
+
+  header{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    padding:14px 20px; border-bottom:1px solid var(--line);
+    background:rgba(15,18,32,.6); backdrop-filter:blur(8px);
+    position:sticky; top:0; z-index:30;
+  }
+  .brand{font-size:1.15rem; font-weight:700; letter-spacing:.5px;}
+  header .spacer{flex:1;}
+  .btn{
+    background:var(--panel); border:1px solid var(--line); color:var(--text);
+    padding:8px 14px; border-radius:10px; cursor:pointer; font-size:.85rem;
+    display:inline-flex; align-items:center; gap:6px; transition:.15s;
+  }
+  .btn:hover{background:var(--panel2); transform:translateY(-1px);}
+  .btn:active{transform:translateY(0);}
+  .btn.primary{background:linear-gradient(135deg,var(--accent),#c9365c); border-color:transparent; font-weight:700;}
+  .btn.primary:hover{filter:brightness(1.1);}
+  .btn.on{border-color:var(--ok); color:var(--ok);}
+  .btn kbd{background:#00000055; border-radius:5px; padding:1px 5px; font-size:.7rem; color:var(--muted); font-family:inherit;}
+
+  main{
+    display:grid; grid-template-columns: minmax(0,1fr) 324px; gap:24px;
+    padding:24px 14px 60px;
+  }
+  @media(max-width:960px){ main{grid-template-columns:1fr;} }
+
+  /* ============ 左：轉盤區 ============ */
+  .stage{display:flex; flex-direction:column; align-items:center; gap:16px; padding-top:44px;}
+  #titleInput{
+    background:transparent; border:none; outline:none; color:var(--text);
+    font-size:1.5rem; font-weight:800; text-align:center; width:100%; max-width:520px;
+    border-bottom:2px dashed transparent; padding:4px 8px;
+  }
+  body.editing #titleInput{border-bottom-color:var(--line);}
+  .wheel-wrap{position:relative; width:min(704px, 92vw, calc(100vh - 244px)); aspect-ratio:1;}
+  #wheelCanvas{width:100%; height:100%; display:block; cursor:pointer;
+    filter:drop-shadow(0 18px 40px rgba(0,0,0,.55));}
+  #confettiCanvas{position:fixed; inset:0; pointer-events:none; z-index:60;}
+
+  /* ============ 旁觀的小人們（左右看著轉盤） ============ */
+  .char{position:absolute; z-index:6; pointer-events:none;}
+  .char img{display:block; height:100%; width:auto; transform-origin:50% 100%; will-change:transform;}
+  /* 腳下靜態陰影（不用 filter：filter 疊 transform 動畫會造成閃爍抖動） */
+  .char::before{content:""; position:absolute; left:50%; bottom:0; transform:translateX(-50%);
+    width:62%; height:16px; border-radius:50%;
+    background:radial-gradient(ellipse at center, rgba(0,0,0,.5) 0%, transparent 70%);}
+  .char-left{left:-22%; bottom:-3%; height:46%;}
+  .char-right{right:-23%; bottom:-4%; height:53%; transform:scaleX(-1);} /* 反轉，面向中間 */
+  /* 靜止時完全靜止；旋轉中以腳跟為軸心左右搖：+25°回正、-25°回正，1 秒一輪 */
+  body.spinning .char img{animation:sway 1s ease-in-out infinite;}
+  @keyframes sway{
+    0%,12%{transform:rotate(0deg)}
+    30%{transform:rotate(25deg)}
+    48%,52%{transform:rotate(0deg)}
+    70%{transform:rotate(-25deg)}
+    88%,100%{transform:rotate(0deg)}
+  }
+  /* 開獎：同樣的搖擺加大幅度，搖兩下就停 */
+  body.cheer .char img{animation:swayBig 1s ease-in-out 2 !important;}
+  @keyframes swayBig{
+    0%,10%{transform:rotate(0deg)}
+    28%{transform:rotate(35deg)}
+    46%,54%{transform:rotate(0deg)}
+    72%{transform:rotate(-35deg)}
+    90%,100%{transform:rotate(0deg)}
+  }
+  @media(max-width:960px){
+    .char-left{left:-11%; height:33%;}
+    .char-right{right:-12%; height:38%;}
+  }
+
+  .counter{color:var(--muted); font-size:.8rem;}
+
+  /* ============ 右：側欄 ============ */
+  aside{display:flex; flex-direction:column; gap:16px;}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px;}
+  .card h3{font-size:.9rem; color:var(--muted); font-weight:600; margin-bottom:10px; display:flex; align-items:center; gap:6px;}
+  textarea{
+    width:100%; min-height:200px; resize:vertical;
+    background:#11152a; color:var(--text); border:1px solid var(--line); border-radius:10px;
+    padding:12px; font-family:ui-monospace,Consolas,"Noto Sans TC",monospace; font-size:.9rem; line-height:1.7;
+    outline:none;
+  }
+  textarea:focus{border-color:#4a568c;}
+  .ta-hidden{color:#666e92;}
+  .row{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+  select,input[type=number]{
+    background:#11152a; color:var(--text); border:1px solid var(--line); border-radius:8px;
+    padding:7px 10px; font-size:.85rem; outline:none;
+  }
+  .switch{display:flex; align-items:center; gap:8px; font-size:.85rem; color:var(--muted); cursor:pointer;}
+  .switch input{accent-color:var(--accent); width:16px; height:16px; cursor:pointer;}
+  .presets{display:flex; flex-wrap:wrap; gap:6px;}
+  .chip{background:var(--panel2); border:1px solid var(--line); border-radius:999px; padding:5px 12px; font-size:.78rem; cursor:pointer; transition:.15s;}
+  .chip:hover{border-color:var(--accent); color:var(--accent);}
+
+  .history{display:flex; flex-direction:column; gap:6px; max-height:260px; overflow:auto;}
+  .hist-item{display:flex; align-items:center; gap:8px; background:#11152a; border:1px solid var(--line); border-radius:8px; padding:7px 10px; font-size:.85rem; animation:pop .25s;}
+  .hist-item .dot{width:10px; height:10px; border-radius:3px; flex:none;}
+  .hist-item .n{flex:1; word-break:break-all;}
+  .hist-item .idx{color:var(--muted); font-size:.7rem;}
+  .hist-empty{color:var(--muted); font-size:.8rem;}
+  @keyframes pop{from{transform:scale(.9); opacity:0;} to{transform:scale(1); opacity:1;}}
+
+  /* ============ 結果：中獎卡（右上）＋再轉一次（左上） ============ */
+  @keyframes fade{from{opacity:0;} to{opacity:1;}}
+  .result-card{
+    position:absolute; top:-88px; right:-210px; width:420px; z-index:9; display:none;
+    flex-direction:column; align-items:stretch; gap:8px; text-align:left;
+    background:linear-gradient(165deg,#3a3563,#1b2040 60%);
+    border:2px solid #d9a84e; border-radius:18px; padding:16px 18px;
+    box-shadow:0 14px 44px rgba(0,0,0,.65), 0 0 34px rgba(255,190,70,.3);
+    overflow:hidden;
+  }
+  .result-card.show{display:flex; animation:winIn .55s cubic-bezier(.2,1.5,.35,1);}
+  @keyframes winIn{0%{transform:scale(.5) rotate(-5deg); opacity:0;} 100%{transform:scale(1) rotate(0deg); opacity:1;}}
+  .result-card::before{content:""; position:absolute; top:-70%; left:-45%; width:55%; height:240%;
+    transform:rotate(18deg); background:linear-gradient(90deg,transparent,rgba(255,226,140,.4),transparent);
+    animation:shine 2.4s linear infinite; pointer-events:none;}
+  @keyframes shine{0%{left:-45%;} 100%{left:140%;}}
+  .rk-head{display:flex; align-items:center; gap:14px;}
+  .rk-trophy{font-size:2.8rem; flex:none; filter:drop-shadow(0 0 12px rgba(255,200,80,.65));}
+  .rk-main{flex:1; min-width:0;}
+  .rk-kicker{color:#ffd980; letter-spacing:3px; font-size:.8rem; font-weight:700; white-space:nowrap;}
+  .rk-name{margin:3px 0 0; font-size:2.25rem; font-weight:900; line-height:1.2; word-break:break-word;
+    background:linear-gradient(105deg,#ffedb0,#ffb03a 45%,#ffedb0);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 2px 8px rgba(255,180,60,.45));}
+  .rk-foot{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+  .rk-sub{color:var(--muted); font-size:.74rem; white-space:nowrap; flex:none;}
+  .rk-actions{display:flex; gap:6px; white-space:nowrap; margin-left:auto;}
+  .rk-actions .btn{padding:4px 9px; font-size:.72rem;}
+  #btnAgain{
+    position:absolute; top:-16px; left:-118px; z-index:9;
+    background:linear-gradient(135deg,#ffc258,#ff7a3d); border:none; color:#241505;
+    font-weight:900; font-size:1.05rem; padding:13px 20px; border-radius:14px;
+    box-shadow:0 10px 28px rgba(255,150,50,.35); animation:pulse 1.7s ease-in-out infinite;
+  }
+  #btnAgain kbd{background:#00000033; color:#3a2a10;}
+  @keyframes pulse{0%,100%{transform:scale(1);} 50%{transform:scale(1.06);}}
+  /* 空間緊縮模式：JS 量到窄空隙時套用 */
+  .result-card.compact{gap:6px; padding:10px 12px;}
+  .result-card.compact .rk-head{gap:8px;}
+  .result-card.compact .rk-trophy{font-size:1.8rem;}
+  .result-card.compact .rk-kicker{letter-spacing:2px; font-size:.66rem;}
+  .result-card.compact .rk-name{font-size:1.25rem;}
+  .result-card.compact .rk-sub{font-size:.64rem;}
+  .result-card.compact .rk-actions .btn{padding:3px 7px; font-size:.66rem;}
+  /* 最後手段：橫向空間真的放不下，浮在右上（標題列之下、側欄上方） */
+  .result-card.pos-top{position:fixed; top:80px; right:14px; width:min(92vw,420px);}
+  @media(max-width:960px){
+    .result-card{position:fixed; top:64px; right:8px; width:min(92vw,356px); z-index:25;}
+    #btnAgain{position:fixed; top:66px; left:10px; z-index:25; padding:9px 12px; font-size:.8rem;}
+  }
+
+  /* 全螢幕 */
+  body.fs header,body.fs aside,body.fs .counter,body.fs #titleInput{display:none;}
+  body.fs main{padding:0; height:100vh; display:flex; align-items:center; justify-content:center; max-width:none;}
+  body.fs .wheel-wrap{width:min(96vmin, 100vw);}
+  .fs-exit{position:fixed; top:14px; right:14px; z-index:40; display:none;}
+  body.fs .fs-exit{display:inline-flex;}
+
+  .toast{position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    background:#242b52; border:1px solid #3a447a; color:var(--text); padding:10px 18px;
+    border-radius:12px; font-size:.85rem; z-index:80; display:none; animation:fade .2s;}
+  @media (prefers-reduced-motion: reduce){
+    /* 系統開啟「減少動態效果」時：UI 動畫直接停用，人物保持靜止，
+       而不是把時長壓成 0.01 秒（那會變成高頻抖動） */
+    .hist-item,.result-card.show,.result-card::before,#btnAgain{animation:none;}
+    body.spinning .char img,body.cheer .char img{animation:none;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">🎡 超級轉盤</div>
+  <div class="spacer"></div>
+  <button class="btn" id="btnEdit">✏️ 編輯清單 <kbd>E</kbd></button>
+  <button class="btn on" id="btnSound">🔊 音效</button>
+  <button class="btn" id="btnShare">🔗 分享</button>
+  <button class="btn" id="btnFull">⛶ 全螢幕 <kbd>F</kbd></button>
+</header>
+
+<main>
+  <section class="stage">
+    <input id="titleInput" value="今天要幹嘛？" spellcheck="false" aria-label="轉盤標題">
+    <div class="wheel-wrap">
+      <canvas id="wheelCanvas" title="點擊旋轉"></canvas>
+      <div class="char char-left" aria-hidden="true"><img src="assets/girl.png" alt="圍觀的紫髮女孩"></div>
+      <div class="char char-right" aria-hidden="true"><img src="assets/xiaobai.png" alt="圍觀的白目小人"></div>
+      <button class="btn" id="btnAgain">🎰 再轉一次 <kbd>SPACE</kbd></button>
+      <div class="result-card" id="resultCard">
+        <div class="rk-head">
+          <div class="rk-trophy">🏆</div>
+          <div class="rk-main">
+            <div class="rk-kicker">本 次 抽 中</div>
+            <div class="rk-name selectable" id="winnerText"></div>
+          </div>
+        </div>
+        <div class="rk-foot">
+          <div class="rk-sub" id="winnerSub"></div>
+          <div class="rk-actions">
+            <button class="btn" id="btnHideWinner">👁 隱藏它</button>
+            <button class="btn" id="btnDelWinner">🗑 刪除它</button>
+            <button class="btn" id="btnResultClose" title="關閉 (X)">✕</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="counter" id="counter"></div>
+  </section>
+
+  <aside>
+    <div class="card">
+      <h3>📋 清單（每行一個・可用 <code>名稱*3</code> 加權）</h3>
+      <textarea id="listArea" spellcheck="false" placeholder="小美&#10;小華*2&#10;罰錢*3"></textarea>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn" id="btnShuffle">🔀 打亂</button>
+        <button class="btn" id="btnReverse">↕ 反序</button>
+        <button class="btn" id="btnUnhide">👁 全部顯示</button>
+        <button class="btn" id="btnClearList">🧹 清空</button>
+      </div>
+      <label class="switch" style="margin-top:12px;">
+        <input type="checkbox" id="cfgRemoveWin"><span>中獎後自動移除該項目</span>
+      </label>
+      <div class="row" style="margin-top:12px;">
+        <span style="font-size:.8rem;color:var(--muted)">轉速</span>
+        <select id="cfgSpeed">
+          <option value="3">刺激（3 秒）</option>
+          <option value="5" selected>正常（5 秒）</option>
+          <option value="8">慢動作（8 秒）</option>
+        </select>
+        <label class="switch"><input type="checkbox" id="cfgConfetti" checked>🎊 慶祝</label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>🎯 快速範本</h3>
+      <div class="presets" id="presets"></div>
+    </div>
+
+    <div class="card">
+      <h3>🕘 歷史結果（點擊可重複抽出）</h3>
+      <div class="history" id="history"></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <button class="btn" id="btnResetWheel">↺ 重設轉盤 <kbd>R</kbd></button>
+        <button class="btn" id="btnClearAll">🗑 清除所有資料</button>
+      </div>
+      <p style="color:var(--muted);font-size:.72rem;margin-top:10px;line-height:1.6;">
+        中獎結果以 <code>crypto.getRandomValues</code> 硬件亂數預抽決定，動畫只負責停到該格。所有資料只存在你的瀏覽器（localStorage），分享連結會带上清單。
+      </p>
+    </div>
+  </aside>
+</main>
+
+<button class="btn fs-exit" id="btnExitFull">✕ 離開全螢幕</button>
+
+<canvas id="confettiCanvas"></canvas>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   狀態
+============================================================ */
+const LS_KEY = "superwhe…e-v1";
+const MAX_ITEMS = 100;
+
+const PRESETS = {
+  "是/否": ["是", "否"],
+  "今天吃什麼": ["滷肉飯", "羊肉爐", "珍珠奶茶", "便當", "泡麵", "火鍋", "寿司", "沙拉*2"],
+  "真心話大冒險": ["真心話*3", "大冒險*3", "免罰过关"],
+  "處罰": ["唱歌", "深蹲 10 下", "學猫叫", "罰錢 50*2", "免罰"],
+  "擲筊式": ["🟢 好", "❌ 否"],
+};
+
+let state = {
+  title: "今天要幹嘛？",
+  raw: "小美\n小華\n大雄\n靜香\n胖虎\n小夫",
+  hidden: [],          // 隱藏的行索引
+  removeWin: false,
+  speed: "5",
+  sound: true,
+  confetti: true,
+  history: [],
+};
+let items = [];        // 解析後的 {text, weight, index, hidden}
+let segs = [];         // 繪圖分段（加權展開）
+let rot = 0;           // 目前轉盤角度（rad）
+let spinning = false;
+let lastWinner = null;
+let pointerFlap = 0;
+
+const $ = id => document.getElementById(id);
+const canvas = $("wheelCanvas"), ctx = canvas.getContext("2d");
+const confettiCanvas = $("confettiCanvas"), cctx = confettiCanvas.getContext("2d");
+
+/* ============================================================
+   真・亂數（WebCrypto）
+============================================================ */
+const cryptoBuf = new Uint32Array(1);
+function randInt(n){ // [0, n)
+  crypto.getRandomValues(cryptoBuf);
+  return cryptoBuf[0] % n;
+}
+function randFloat(){ crypto.getRandomValues(cryptoBuf); return cryptoBuf[0] / 4294967296; }
+// 指針（頂部）對應到輪盤上的分數位置 [0,1)
+function pointerFrac(r){ return ((-r / (Math.PI*2)) % 1 + 1) % 1; }
+
+/* ============================================================
+   解析清單
+============================================================ */
+function parseList(){
+  const lines = state.raw.split("\n");
+  items = [];
+  lines.forEach((line, i) => {
+    let t = line.trim();
+    if(!t) return;
+    let w = 1;
+    const m = t.match(/^(.*?)[*×xX](\d{1,3})$/);
+    if(m && m[1].trim()){ t = m[1].trim(); w = Math.min(20, Math.max(1, +m[2])); }
+    items.push({ text: t, weight: w, index: i, hidden: state.hidden.includes(i) });
+  });
+  if(items.length > MAX_ITEMS){
+    toast(`項目太多（${items.length}），僅取前 ${MAX_ITEMS} 個`);
+    items = items.slice(0, MAX_ITEMS);
+  }
+  buildSegs();
+  renderCounter();
+}
+function buildSegs(){
+  segs = [];
+  const visible = items.filter(it => !it.hidden);
+  if(!visible.length) return;
+  const total = visible.reduce((s, it) => s + it.weight, 0);
+  let acc = 0;
+  for(const it of visible){
+    const frac = it.weight / total;
+    segs.push({ item: it, start: acc, end: acc + frac, color: colorFor(it.index) });
+    acc += frac;
+  }
+}
+const PALETTE = ["#ff5470","#ffb03a","#3ddc84","#38b6ff","#b07cff","#ff7847","#f2d43d","#31e0c1","#ff5fa2","#8fd44a","#6c8cff","#e05fd8"];
+function colorFor(i){ return PALETTE[i % PALETTE.length]; }
+
+/* ============================================================
+   繪製轉盤
+============================================================ */
+function fitCanvas(){
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const rect = canvas.getBoundingClientRect();
+  if(rect.width < 10) return 0;
+  canvas.width = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return rect.width;
+}
+let cssW = 0;
+function draw(){
+  cssW = fitCanvas() || cssW;
+  const w = cssW, cx = w/2, cy = w/2;
+  const R = w/2 - 34; // 預留指針空間
+  ctx.clearRect(0, 0, w, w);
+
+  // 外框
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, R + 14, 0, Math.PI*2);
+  const ring = ctx.createLinearGradient(0, 0, w, w);
+  ring.addColorStop(0, "#f6d98a"); ring.addColorStop(.5, "#b98a3e"); ring.addColorStop(1, "#f6d98a");
+  ctx.strokeStyle = ring; ctx.lineWidth = 10; ctx.stroke();
+  // 燈泡
+  const lampN = 24, t = performance.now()/1000;
+  for(let i = 0; i < lampN; i++){
+    const a = i / lampN * Math.PI * 2;
+    const on = spinning ? ((i + Math.floor(t*4)) % 2 === 0) : ((i + Math.floor(t*2)) % 2 === 0);
+    ctx.beginPath();
+    ctx.arc(cx + Math.cos(a)*(R+14), cy + Math.sin(a)*(R+14), 4.5, 0, Math.PI*2);
+    ctx.fillStyle = on ? "#fff3c0" : "#7a6a3a";
+    ctx.shadowColor = on ? "#ffdf80" : "transparent"; ctx.shadowBlur = on ? 10 : 0;
+    ctx.fill(); ctx.shadowBlur = 0;
+  }
+  ctx.restore();
+
+  if(!segs.length){
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI*2);
+    ctx.fillStyle = "#11152a"; ctx.fill();
+    ctx.fillStyle = "#8b93b4"; ctx.textAlign = "center";
+    ctx.font = `${Math.max(14, w*0.03)}px sans-serif`;
+    ctx.fillText("請在右側輸入清單", cx, cy);
+    drawPointer(cx, w); drawHub(cx, cy, R);
+    return;
+  }
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rot);
+
+  // 扇形
+  for(const s of segs){
+    const a0 = s.start * Math.PI*2 - Math.PI/2, a1 = s.end * Math.PI*2 - Math.PI/2;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, R, a0, a1); ctx.closePath();
+    const g = ctx.createRadialGradient(0, 0, R*0.1, 0, 0, R);
+    g.addColorStop(0, shade(s.color, 18)); g.addColorStop(1, s.color);
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+
+  // 文字
+  for(const s of segs){
+    const ang = (s.start + s.end) / 2 * Math.PI*2 - Math.PI/2;
+    const frac = s.end - s.start;
+    const arcLen = frac * Math.PI * 2 * R * 0.78;
+    let fs = Math.min(R*0.062, arcLen / Math.max(1, s.item.text.length * 1.05));
+    fs = Math.max(7, fs);
+    ctx.save();
+    ctx.rotate(ang);
+    ctx.font = `700 ${fs}px "Noto Sans TC","Microsoft JhengHei",sans-serif`;
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 3;
+    ctx.fillStyle = "#fff";
+    let txt = s.item.text;
+    if(ctx.measureText(txt).width > R*0.78){
+      while(txt.length > 2 && ctx.measureText(txt + "…").width > R*0.78) txt = txt.slice(0, -1);
+      txt += "…";
+    }
+    ctx.fillText(txt, R*0.86, 0);
+    ctx.restore();
+  }
+  ctx.restore();
+
+  drawPointer(cx, w);
+  drawHub(cx, cy, R);
+}
+function drawHub(cx, cy, R){
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, R*0.11, 0, Math.PI*2);
+  const g = ctx.createRadialGradient(cx, cy, 1, cx, cy, R*0.11);
+  g.addColorStop(0, "#fff"); g.addColorStop(1, "#c9cfe8");
+  ctx.fillStyle = g; ctx.fill();
+  ctx.strokeStyle = "#00000055"; ctx.lineWidth = 2; ctx.stroke();
+  ctx.restore();
+}
+function drawPointer(cx, w){
+  const y = w/2 - (w/2 - 34) - 26;
+  ctx.save();
+  ctx.translate(cx, y);
+  ctx.rotate(pointerFlap);
+  ctx.beginPath();
+  ctx.moveTo(0, 30); ctx.lineTo(-13, -6); ctx.quadraticCurveTo(0, -18, 13, -6); ctx.closePath();
+  ctx.fillStyle = "#ff5470";
+  ctx.shadowColor = "rgba(0,0,0,.6)"; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#fff"; ctx.font = "14px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("▼", 0, 2);
+  ctx.restore();
+}
+function shade(hex, amt){
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n>>16)+amt, g = ((n>>8)&255)+amt, b = (n&255)+amt;
+  r = Math.min(255,r); g = Math.min(255,g); b = Math.min(255,b);
+  return `rgb(${r},${g},${b})`;
+}
+
+/* ============================================================
+   音效（WebAudio）
+============================================================ */
+let actx = null;
+function ensureAudio(){ if(!actx) actx = new (window.AudioContext || window.webkitAudioContext)(); if(actx.state === "suspended") actx.resume(); }
+function tick(){
+  if(!state.sound) return;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = "square"; o.frequency.value = 1800 + randInt(400);
+  g.gain.setValueAtTime(0.05, actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.03);
+  o.connect(g).connect(actx.destination);
+  o.start(); o.stop(actx.currentTime + 0.035);
+}
+function fanfare(){
+  if(!state.sound) return;
+  const notes = [523, 659, 784, 1047];
+  notes.forEach((f, i) => {
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = "triangle"; o.frequency.value = f;
+    const t0 = actx.currentTime + i * 0.11;
+    g.gain.setValueAtTime(0.001, t0);
+    g.gain.exponentialRampToValueAtTime(0.18, t0 + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.5);
+    o.connect(g).connect(actx.destination);
+    o.start(t0); o.stop(t0 + 0.55);
+  });
+}
+
+/* ============================================================
+   旋轉
+============================================================ */
+function spin(){
+  if(spinning || !segs.length) return;
+  ensureAudio();
+  spinning = true;
+  document.body.classList.add("spinning");
+
+  // 1) 先用硬件亂數決定中獎分段（真隨機），再計算終止角度
+  const pick = randInt(segs.length);
+  const seg = segs[pick];
+  // 指針位於頂部（-90°），要讓 seg 中心对准指針：
+  const segCenter = (seg.start + seg.end) / 2;
+  const targetMod = ((0 - segCenter) % 1 + 1) % 1;      // 需要的 rot mod 1
+  const curMod = ((rot / (Math.PI*2)) % 1 + 1) % 1;
+  const jitter = (randFloat() - 0.5) * (seg.end - seg.start) * 0.7;
+  const targetAngle = (targetMod - curMod + 1 + jitter / 1) * Math.PI*2;
+
+  const turns = 6 + randInt(4) + Math.round(+state.speed); // 圈數
+  const startRot = rot;
+  const endRot = startRot + targetAngle + turns * Math.PI*2;
+
+  const duration = (+state.speed) * 1000;
+  const t0 = performance.now();
+  let lastSegIdx = -1;
+
+  function frame(now){
+    const p = Math.min(1, (now - t0) / duration);
+    const e = 1 - Math.pow(1 - p, 3.2); // 減速曲線
+    rot = startRot + (endRot - startRot) * e;
+
+    // 打點 + 指針拍打（以指針實際壓到的扇格計算）
+    const pf = pointerFrac(rot);
+    let idx = segs.findIndex(s => pf >= s.start && pf < s.end);
+    if(idx !== lastSegIdx && lastSegIdx !== -1){ tick(); pointerFlap = 0.35; }
+    if(idx !== -1) lastSegIdx = idx;
+    pointerFlap *= 0.82;
+
+    draw();
+    if(p < 1) requestAnimationFrame(frame);
+    else finish(seg.item);
+  }
+  requestAnimationFrame(frame);
+}
+
+function finish(winner){
+  spinning = false;
+  document.body.classList.remove("spinning");
+  document.body.classList.add("cheer");
+  setTimeout(() => document.body.classList.remove("cheer"), 2300);
+  lastWinner = winner;
+  // 先記錄中獎當下的機率與項目數（移除後會變動）
+  const vis = segs.length;
+  const odds = winner.weight / segs.reduce((s,x)=>s+x.item.weight,0);
+  winner._odds = odds; winner._vis = vis;
+
+  state.history.unshift({ text: winner.text, color: colorFor(winner.index) });
+  if(state.history.length > 30) state.history.length = 30;
+  renderHistory();
+  save();
+
+  if(state.removeWin){
+    removeLineByIndex(winner.index);
+    buildSegs(); renderCounter();
+  }
+
+  fanfare();
+  if(state.confetti) launchConfetti();
+  showResult(winner);
+  draw();
+}
+
+/* ============================================================
+   結果彈出
+============================================================ */
+function showResult(winner){
+  const card = $("resultCard");
+  positionResultCard();
+  // 先以 visibility:hidden 讓卡片可實際測量，縮字迴圈才有真实數值
+  card.style.visibility = "hidden";
+  card.classList.add("show");
+  const nameEl = $("winnerText");
+  nameEl.textContent = winner.text;
+  // 名稱過長時自動縮字：單行優先；若會換行也縮，確保獎欄高度不壓到圓盤
+  nameEl.style.fontSize = "";
+  let fs = parseFloat(getComputedStyle(nameEl).fontSize) || 36;
+  while((nameEl.scrollWidth > nameEl.clientWidth || nameEl.scrollHeight > fs * 1.4) && fs > 18){
+    fs -= 2; nameEl.style.fontSize = fs + "px";
+  }
+  if(nameEl.scrollHeight > fs * 1.4){ // 仍換行（獎欄變高）→ 整條往上挪，不壓圓盤
+    const wr = canvas.getBoundingClientRect();
+    card.style.top = Math.max(-104, 80 - wr.top) + "px";
+  }
+  $("winnerSub").innerHTML = `機率 ${(winner._odds*100).toFixed(1)}%<br>共 ${winner._vis} 項抽 1`;
+  const autoMode = state.removeWin;
+  $("btnHideWinner").style.display = autoMode ? "none" : "";
+  $("btnDelWinner").style.display = autoMode ? "none" : "";
+  // 重播進場動畫
+  card.classList.remove("show");
+  card.style.visibility = "";
+  void card.offsetWidth;
+  card.classList.add("show");
+}
+function hideResult(){ $("resultCard").classList.remove("show"); }
+// 依實際測量決定獎條位置：右側空隙塞得下→縮寬貼齊側欄；放不下→浮右上
+function positionResultCard(){
+  const card = $("resultCard");
+  card.classList.remove("pos-top"); card.classList.remove("compact");
+  card.style.right = card.style.top = card.style.width = "";
+  if(document.body.classList.contains("fs") || innerWidth <= 960) return;
+  const wr = canvas.getBoundingClientRect();
+  const ar = document.querySelector("aside").getBoundingClientRect();
+  const r = wr.width / 2, cx = wr.left + r, cy = wr.top + r;
+  const topView = Math.max(80, wr.top - 88);                 // 卡片視覺頂邊（絕不蓋到頂部列）
+  const edgeX = h => {                                        // 依卡片高度求圓盤在卡片底高度的右緣 x
+    const dy = (topView + h) - cy;
+    const dx = Math.abs(dy) >= r ? 0 : Math.sqrt(r * r - dy * dy);
+    return wr.left + Math.max(wr.width * 0.75, r + dx);      // 不低於圓盤右上 0.75 安全界線
+  };
+  const gapX = ar.left - 12;                                  // 距側欄留 12px
+  let x = edgeX(150), width = Math.min(420, gapX - x);
+  if(width < 340){                                            // 一般版放不下→試緊縮版（較矮）
+    x = edgeX(118); width = Math.min(420, gapX - x);
+    if(width < 260){ card.classList.add("pos-top"); return; }
+    card.classList.add("compact");
+  }
+  card.style.width = width + "px";
+  card.style.right = (wr.right - gapX) + "px";
+  card.style.top = (topView - wr.top) + "px";
+}
+window.addEventListener("resize", positionResultCard);
+
+/* ============================================================
+   Confetti
+============================================================ */
+let confetti = [];
+function launchConfetti(){
+  confettiCanvas.width = innerWidth; confettiCanvas.height = innerHeight;
+  const colors = ["#ff5470","#ffb03a","#3ddc84","#38b6ff","#b07cff","#f2d43d"];
+  for(let i = 0; i < 160; i++){
+    confetti.push({
+      x: innerWidth/2 + (randFloat()-.5)*innerWidth*.4,
+      y: innerHeight/2,
+      vx: (randFloat()-.5)*14, vy: -randFloat()*16 - 6,
+      w: 6+randFloat()*6, h: 8+randFloat()*8,
+      a: randFloat()*6, va: (randFloat()-.5)*.3,
+      c: colors[randInt(colors.length)], life: 1,
+    });
+  }
+  if(confetti.length) animateConfetti();
+}
+function animateConfetti(){
+  cctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+  confetti = confetti.filter(p => p.life > 0);
+  for(const p of confetti){
+    p.vy += 0.35; p.vx *= 0.99; p.x += p.vx; p.y += p.vy; p.a += p.va;
+    if(p.y > innerHeight + 30) p.life = 0;
+    cctx.save(); cctx.translate(p.x, p.y); cctx.rotate(p.a);
+    cctx.globalAlpha = Math.max(0, Math.min(1, p.life));
+    cctx.fillStyle = p.c; cctx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
+    cctx.restore();
+  }
+  if(confetti.length) requestAnimationFrame(animateConfetti);
+  else cctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+}
+
+/* ============================================================
+   編輯器 / 側欄
+============================================================ */
+const listArea = $("listArea");
+function syncTextarea(){
+  listArea.value = state.raw;
+}
+function onListInput(){ state.raw = listArea.value; parseList(); save(); draw(); }
+function renderCounter(){
+  const vis = items.filter(i=>!i.hidden).length;
+  const hid = items.length - vis;
+  $("counter").textContent = `共 ${items.length} 項・可抽出 ${vis} 項` + (hid ? `（已隱藏 ${hid} 項）` : "");
+}
+function hideLineByIndex(idx){
+  if(!state.hidden.includes(idx)) state.hidden.push(idx);
+  state.raw = keepRawWithHidden();
+  parseList(); syncTextarea(); save(); draw();
+}
+function removeLineByIndex(idx){
+  const lines = state.raw.split("\n");
+  lines[idx] = ""; // 保留空行以維持其他索引
+  state.raw = lines.join("\n").replace(/\n+$/, "");
+  // 空行不改變其他行的索引，hidden 維持不變
+  parseList();
+  syncTextarea();
+}
+function keepRawWithHidden(){ return state.raw; }
+function unhideAll(){ state.hidden = []; parseList(); save(); draw(); toast("已顯示所有隱藏項目"); }
+
+function renderHistory(){
+  const el = $("history");
+  if(!state.history.length){ el.innerHTML = `<div class="hist-empty">還沒有紀錄。按下空白鍵開始！</div>`; return; }
+  el.innerHTML = "";
+  state.history.forEach((h, i) => {
+    const d = document.createElement("div");
+    d.className = "hist-item selectable";
+    d.innerHTML = `<span class="dot" style="background:${h.color}"></span><span class="n"></span><span class="idx">#${state.history.length - i}</span>`;
+    d.querySelector(".n").textContent = h.text;
+    d.title = "點擊：把「" + h.text + "」加入清單並抽它";
+    d.addEventListener("click", () => {
+      if(!items.some(it => it.text === h.text)){
+        state.raw = state.raw.replace(/\s*$/, "") + "\n" + h.text;
+        syncTextarea(); parseList(); save(); draw();
+      }
+      hideResult();
+      toast("已加入，開始旋轉…");
+      setTimeout(spin, 300);
+    });
+    el.appendChild(d);
+  });
+}
+
+/* 範本 */
+function renderPresets(){
+  const el = $("presets");
+  Object.entries(PRESETS).forEach(([name, arr]) => {
+    const c = document.createElement("span");
+    c.className = "chip"; c.textContent = name;
+    c.addEventListener("click", () => {
+      if(!confirm(`載入「${name}」會覆蓋目前清單，確定？`)) return;
+      state.raw = arr.join("\n"); state.hidden = [];
+      state.title = name;
+      $("titleInput").value = name;
+      syncTextarea(); parseList(); save(); draw();
+    });
+    el.appendChild(c);
+  });
+  const custom = document.createElement("span");
+  custom.className = "chip"; custom.textContent = "💾 存目前清單為範本";
+  custom.addEventListener("click", () => {
+    const name = prompt("範本名稱：");
+    if(!name) return;
+    const vis = items.filter(i=>!i.hidden).map(i => i.weight > 1 ? `${i.text}*${i.weight}` : i.text);
+    if(!vis.length) return toast("清單是空的！");
+    PRESETS[name] = vis; renderPresets();
+  });
+  el.appendChild(custom);
+}
+
+/* ============================================================
+   存檔 / 分享
+============================================================ */
+function save(){
+  try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){}
+}
+function load(){
+  let loaded = false;
+  // URL #w=base64(清單) 分享
+  if(location.hash.startsWith("#w=")){
+    try{
+      const b64 = decodeURIComponent(location.hash.slice(3));
+      const txt = decodeURIComponent(escape(atob(b64)));
+      if(txt.trim()){ state.raw = txt; loaded = true; }
+    }catch(e){}
+  }
+  try{
+    const s = JSON.parse(localStorage.getItem(LS_KEY) || "null");
+    if(s && typeof s === "object"){
+      if(!loaded && typeof s.raw === "string") state.raw = s.raw;
+      if(Array.isArray(s.hidden)) state.hidden = s.hidden;
+      if(typeof s.title === "string"){ state.title = s.title; $("titleInput").value = s.title; }
+      state.removeWin = !!s.removeWin; state.confetti = s.confetti !== false; state.sound = s.sound !== false;
+      if(s.speed) state.speed = String(s.speed);
+      if(Array.isArray(s.history)) state.history = s.history;
+    }
+  }catch(e){}
+  $("cfgRemoveWin").checked = state.removeWin;
+  $("cfgConfetti").checked = state.confetti;
+  $("cfgSpeed").value = state.speed;
+  updateSoundBtn();
+}
+function shareLink(){
+  const b64 = btoa(unescape(encodeURIComponent(state.raw)));
+  const url = location.href.split("#")[0] + "#w=" + encodeURIComponent(b64);
+  navigator.clipboard.writeText(url).then(
+    () => toast("分享連結已複製到剪貼簿 🔗"),
+    () => prompt("複製此連結：", url)
+  );
+}
+
+/* ============================================================
+   UI 事件
+============================================================ */
+function toast(msg){
+  const t = $("toast"); t.textContent = msg; t.style.display = "block";
+  clearTimeout(toast._h); toast._h = setTimeout(() => t.style.display = "none", 2200);
+}
+function updateSoundBtn(){
+  const b = $("btnSound");
+  b.textContent = state.sound ? "🔊 音效" : "🔇 靜音";
+  b.classList.toggle("on", state.sound);
+}
+canvas.addEventListener("click", spin);
+$("btnAgain").addEventListener("click", () => { hideResult(); spin(); });
+$("btnResultClose").addEventListener("click", hideResult);
+$("btnHideWinner").addEventListener("click", () => {
+  if(lastWinner){ hideResult(); hideLineByIndex(lastWinner.index); lastWinner = null; }
+});
+$("btnDelWinner").addEventListener("click", () => {
+  if(lastWinner){
+    const name = lastWinner.text;
+    removeLineByIndex(lastWinner.index);
+    lastWinner = null;
+    hideResult(); save();
+    toast(`已從清單刪除「${name}」`);
+  }
+});
+
+$("btnEdit").addEventListener("click", () => toggleEdit());
+function toggleEdit(force){
+  const on = force !== undefined ? force : !document.body.classList.contains("editing");
+  document.body.classList.toggle("editing", on);
+  $("btnEdit").classList.toggle("on", on);
+  if(on){ syncTextarea(); listArea.focus(); }
+}
+listArea.addEventListener("input", onListInput);
+
+$("btnSound").addEventListener("click", () => { state.sound = !state.sound; updateSoundBtn(); save(); if(state.sound) ensureAudio(); });
+$("btnShare").addEventListener("click", shareLink);
+$("btnFull").addEventListener("click", () => toggleFull(true));
+$("btnExitFull").addEventListener("click", () => toggleFull(false));
+function toggleFull(on){
+  document.body.classList.toggle("fs", on);
+  setTimeout(draw, 60);
+}
+document.addEventListener("fullscreenchange", () => {
+  document.body.classList.toggle("fs", !!document.fullscreenElement);
+  setTimeout(draw, 60);
+});
+
+$("btnResetWheel").addEventListener("click", () => { rot = 0; lastWinner = null; draw(); toast("轉盤已重設"); });
+$("btnClearAll").addEventListener("click", () => {
+  if(!confirm("確定清除所有資料（清單、設定、歷史）？")) return;
+  localStorage.removeItem(LS_KEY);
+  state = { title:"今天要幹嘛？", raw:"", hidden:[], removeWin:false, speed:"5", sound:true, confetti:true, history:[] };
+  $("titleInput").value = state.title;
+  $("cfgRemoveWin").checked = false; $("cfgConfetti").checked = true; $("cfgSpeed").value = "5";
+  updateSoundBtn(); renderHistory(); syncTextarea(); parseList(); draw();
+});
+$("btnShuffle").addEventListener("click", () => mutate(lines => shuffle(lines)));
+$("btnReverse").addEventListener("click", () => mutate(lines => lines.reverse()));
+$("btnUnhide").addEventListener("click", unhideAll);
+$("btnClearList").addEventListener("click", () => { state.raw = ""; state.hidden = []; syncTextarea(); parseList(); save(); draw(); });
+function mutate(fn){
+  const lines = state.raw.split("\n").filter(l => l.trim());
+  fn(lines);
+  state.raw = lines.join("\n"); state.hidden = [];
+  syncTextarea(); parseList(); save(); draw();
+}
+function shuffle(a){ for(let i = a.length-1; i > 0; i--){ const j = randInt(i+1); [a[i],a[j]] = [a[j],a[i]]; } }
+
+$("titleInput").addEventListener("input", () => { state.title = $("titleInput").value; save(); });
+$("cfgRemoveWin").addEventListener("change", e => { state.removeWin = e.target.checked; save(); });
+$("cfgConfetti").addEventListener("change", e => { state.confetti = e.target.checked; save(); });
+$("cfgSpeed").addEventListener("change", e => { state.speed = e.target.value; save(); });
+
+document.addEventListener("keydown", e => {
+  const editingHere = /INPUT|TEXTAREA/.test(document.activeElement.tagName);
+  if(e.key === "Escape"){
+    if($("resultCard").classList.contains("show")){ hideResult(); return; }
+    if(editingHere){ document.activeElement.blur(); toggleEdit(false); }
+    return;
+  }
+  if(editingHere && e.key !== " ") return;
+  switch(e.key.toLowerCase()){
+    case " ": e.preventDefault(); spin(); break;
+    case "x": hideResult(); break;
+    case "s": if(lastWinner) { hideLineByIndex(lastWinner.index); toast(`已隱藏「${lastWinner.text}」`); lastWinner = null; } break;
+    case "r": rot = 0; draw(); toast("轉盤已重設"); break;
+    case "e": toggleEdit(); break;
+    case "f": toggleFull(!document.body.classList.contains("fs")); break;
+  }
+});
+
+window.addEventListener("resize", () => { draw(); if(confetti.length){ confettiCanvas.width = innerWidth; confettiCanvas.height = innerHeight; } });
+
+/* 動畫主迴圈（燈泡閃爍） */
+function loop(){ if(!spinning) draw(); requestAnimationFrame(loop); }
+
+/* ============================================================
+   啟動
+============================================================ */
+load();
+renderPresets();
+renderHistory();
+parseList();
+syncTextarea();
+draw();
+loop();
+</script>
+</body>
+</html>
