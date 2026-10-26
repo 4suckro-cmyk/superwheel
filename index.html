@@ -274,7 +274,7 @@
         <button class="btn" id="btnClearAll">🗑 清除所有資料</button>
       </div>
       <p style="color:var(--muted);font-size:.72rem;margin-top:10px;line-height:1.6;">
-        中獎結果以 <code>crypto.getRandomValues</code> 硬件亂數預抽決定，動畫只負責停到該格。所有資料只存在你的瀏覽器（localStorage），分享連結會带上清單。
+        中獎結果以 <code>crypto.getRandomValues</code> 硬體亂數預抽決定，動畫只負責停到該格。所有資料只存在你的瀏覽器（localStorage），分享連結會帶上清單。
       </p>
     </div>
   </aside>
@@ -295,9 +295,9 @@ const MAX_ITEMS = 100;
 
 const PRESETS = {
   "是/否": ["是", "否"],
-  "今天吃什麼": ["滷肉飯", "羊肉爐", "珍珠奶茶", "便當", "泡麵", "火鍋", "寿司", "沙拉*2"],
-  "真心話大冒險": ["真心話*3", "大冒險*3", "免罰过关"],
-  "處罰": ["唱歌", "深蹲 10 下", "學猫叫", "罰錢 50*2", "免罰"],
+  "今天吃什麼": ["滷肉飯", "羊肉爐", "珍珠奶茶", "便當", "泡麵", "火鍋", "壽司", "沙拉*2"],
+  "真心話大冒險": ["真心話*3", "大冒險*3", "免罰過關"],
+  "處罰": ["唱歌", "深蹲 10 下", "學貓叫", "罰錢 50*2", "免罰"],
   "擲筊式": ["🟢 好", "❌ 否"],
   "今日死法": ["被香蕉皮滑倒摔死", "被長頸鹿踩死", "吃葡萄嗆死", "上廁所滑手機掉馬桶溺死", "被垃圾車壓死", "被rotom機撞死", "在淺水灘溺死", "被閃電劈第二次", "被子彈紙箱壓死", "從沙發滑落撞桌角"],
 };
@@ -598,7 +598,7 @@ function finish(winner){
 function showResult(winner){
   const card = $("resultCard");
   positionResultCard();
-  // 先以 visibility:hidden 讓卡片可實際測量，縮字迴圈才有真实數值
+  // 先以 visibility:hidden 讓卡片可實際測量，縮字迴圈才有真實數值
   card.style.visibility = "hidden";
   card.classList.add("show");
   const nameEl = $("winnerText");
